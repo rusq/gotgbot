@@ -47,8 +47,10 @@ type botMapping struct {
 	errorLog *log.Logger
 }
 
-var ErrBotAlreadyExists = errors.New("bot already exists in bot mapping")
-var ErrBotUrlPathAlreadyExists = errors.New("url path already exists in bot mapping")
+var (
+	ErrBotAlreadyExists        = errors.New("bot already exists in bot mapping")
+	ErrBotUrlPathAlreadyExists = errors.New("url path already exists in bot mapping")
+)
 
 // addBot Adds a new bot to the botMapping structure.
 // Pass an empty urlPath/webhookSecret if using polling instead of webhooks.

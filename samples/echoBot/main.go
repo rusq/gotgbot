@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"time"
 
 	"github.com/PaulSonOfLars/gotgbot/v2"
@@ -20,6 +22,9 @@ func main() {
 	if token == "" {
 		panic("TOKEN environment variable is empty")
 	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
 
 	// Create bot from environment value.
 	b, err := gotgbot.NewBot(token, &gotgbot.BotOpts{
@@ -45,6 +50,12 @@ func main() {
 		MaxRoutines: ext.DefaultMaxRoutines,
 	})
 	updater := ext.NewUpdater(dispatcher, nil)
+	go func() {
+		// sentinel, when the context is done, stop all bots.
+		<-ctx.Done()
+		updater.Stop()
+		updater.StopAllBots()
+	}()
 
 	// Add echo handler to reply to all text messages.
 	dispatcher.AddHandler(handlers.NewMessage(message.Text, echo))
@@ -52,6 +63,7 @@ func main() {
 	// Start receiving updates.
 	err = updater.StartPolling(b, &ext.PollingOpts{
 		DropPendingUpdates: true,
+		ParentCtx:          ctx,
 		GetUpdatesOpts: &gotgbot.GetUpdatesOpts{
 			Timeout: 9,
 			RequestOpts: &gotgbot.RequestOpts{

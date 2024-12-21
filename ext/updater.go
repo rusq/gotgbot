@@ -107,6 +107,8 @@ type PollingOpts struct {
 	//    long-polling, Telegram responds to your request as soon as new messages are available.
 	//    When setting this, it is recommended you set your PollingOpts.Timeout value to be slightly bigger (eg, +1).
 	GetUpdatesOpts *gotgbot.GetUpdatesOpts
+	// ParentCtx is the parent context for the polling loop.
+	ParentCtx context.Context
 }
 
 // StartPolling starts polling updates from telegram using getUpdates long-polling.
@@ -155,6 +157,9 @@ func (u *Updater) StartPolling(b *gotgbot.Bot, opts *PollingOpts) error {
 				v["allowed_updates"] = string(bs)
 			}
 		}
+		if opts.ParentCtx == nil {
+			opts.ParentCtx = context.Background()
+		}
 	}
 
 	bData, err := u.botMapping.addBot(b, "", "")
@@ -163,16 +168,23 @@ func (u *Updater) StartPolling(b *gotgbot.Bot, opts *PollingOpts) error {
 	}
 
 	go u.Dispatcher.Start(b, bData.updateChan)
-	go u.pollingLoop(bData, reqOpts, v)
+	go u.pollingLoop(opts.ParentCtx, bData, reqOpts, v)
 
 	return nil
 }
 
-func (u *Updater) pollingLoop(bData *botData, opts *gotgbot.RequestOpts, v map[string]string) {
+func (u *Updater) pollingLoop(ctx context.Context, bData *botData, opts *gotgbot.RequestOpts, v map[string]string) {
 	bData.updateWriterControl.Add(1)
 	defer bData.updateWriterControl.Done()
 
 	for {
+		select {
+		case <-bData.stopUpdates:
+			return
+		case <-ctx.Done():
+			return
+		default:
+		}
 		// Check if updater loop has been terminated.
 		if bData.shouldStopUpdates() {
 			return
@@ -180,7 +192,7 @@ func (u *Updater) pollingLoop(bData *botData, opts *gotgbot.RequestOpts, v map[s
 
 		// Manually craft the getUpdate calls to improve memory management, reduce json parsing overheads, and
 		// unnecessary reallocation of url.Values in the polling loop.
-		r, err := bData.bot.Request("getUpdates", v, nil, opts)
+		r, err := bData.bot.RequestWithContext(ctx, "getUpdates", v, nil, opts)
 		if err != nil {
 			if u.UnhandledErrFunc != nil {
 				u.UnhandledErrFunc(err)
